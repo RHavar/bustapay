@@ -3,7 +3,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:66dce283e9c922ef2ee76ff23058aba6a34163060298f5d3eaefaa4c21519bb0"
+  digest = "1:62f547cb06048d15b24152fc9c1843f531a61f1dbad831b467e022dc40b36556"
   name = "github.com/btcsuite/btcd"
   packages = [
     "btcec",
@@ -15,7 +15,7 @@
     "wire",
   ]
   pruneopts = "UT"
-  revision = "cff30e1d23fc9e800b2b5b4b41ef1817dda07e9f"
+  revision = "2a560b2036bee5e3679ec2133eb6520b2f195213"
 
 [[projects]]
   branch = "master"
@@ -27,16 +27,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:10d64b8daaf152aebea768ce10c3ac66b1baecde9aec1621033f8c8cb093ff90"
+  digest = "1:2798afc483a9a278d2be770cb1e3950811a8bbd7efb2925e79464c99f5b95453"
   name = "github.com/btcsuite/btcutil"
   packages = [
     ".",
     "base58",
     "bech32",
+    "psbt",
     "txsort",
   ]
   pruneopts = "UT"
-  revision = "ab6388e0c60ae4834a1f57511e20c17b5f78be4b"
+  revision = "d712eec036a48801c7fc5930eb116fa8ed9417de"
+  source = "https://github.com/rhavar/btcutil.git"
 
 [[projects]]
   branch = "master"
@@ -122,6 +124,14 @@
   version = "v1.2.0"
 
 [[projects]]
+  digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
+
+[[projects]]
   digest = "1:6a4a11ba764a56d2758899ec6f3848d24698d48442ebce85ee7a3f63284526cd"
   name = "github.com/spf13/afero"
   packages = [
@@ -165,27 +175,28 @@
   version = "v1.0.2"
 
 [[projects]]
-  digest = "1:6e30a27eac59a148b3f7a32e0ba54706b31dcde5a42f63b22cb47873b62fa343"
+  digest = "1:214775c11fd26da94a100111a62daa25339198a4f9c57cb4aab352da889f5b93"
   name = "github.com/spf13/viper"
   packages = ["."]
   pruneopts = "UT"
-  revision = "8fb642006536c8d3760c99d4fa2389f5e2205631"
-  version = "v1.2.0"
-
-[[projects]]
-  digest = "1:ba978f6245b7c9ebc1b05f48085f4e21ce3b99fba9ad2c620bdb9605f3ec23f9"
-  name = "golang.org/x/crypto"
-  packages = ["ripemd160"]
-  pruneopts = "UT"
-  revision = "9419663f5a44be8b34ca85f08abc5fe1be11f8a3"
+  revision = "2c12c60302a5a0e62ee102ca9bc996277c2f64f5"
+  version = "v1.2.1"
 
 [[projects]]
   branch = "master"
-  digest = "1:6eb2645d74b43d9c87b51947df39f7c668a4f422cd512053f7f6f75bfaad0197"
+  digest = "1:f804354850ef747f20e387a75e04dfc64a205ab342f7086b7d77796865ff5ede"
+  name = "golang.org/x/crypto"
+  packages = ["ripemd160"]
+  pruneopts = "UT"
+  revision = "5295e8364332db77d75fce11f1d19c053919a9c9"
+
+[[projects]]
+  branch = "master"
+  digest = "1:e2ced6fdf654069e8713c96012275fbd245381673d53e8c8ace640b28441a28b"
   name = "golang.org/x/sys"
   packages = ["unix"]
   pruneopts = "UT"
-  revision = "917fdcba135dcbaccd57425db91723541b4427c8"
+  revision = "e4b3c5e9061176387e7cea65e4dc5853801f3fb7"
 
 [[projects]]
   digest = "1:8029e9743749d4be5bc9f7d42ea1659471767860f0cdc34d37c3111bd308a295"
@@ -215,13 +226,16 @@
   analyzer-version = 1
   input-imports = [
     "github.com/btcsuite/btcd/btcjson",
+    "github.com/btcsuite/btcd/chaincfg",
     "github.com/btcsuite/btcd/chaincfg/chainhash",
     "github.com/btcsuite/btcd/rpcclient",
     "github.com/btcsuite/btcd/txscript",
     "github.com/btcsuite/btcd/wire",
     "github.com/btcsuite/btcutil",
+    "github.com/btcsuite/btcutil/psbt",
     "github.com/btcsuite/btcutil/txsort",
     "github.com/mitchellh/go-homedir",
+    "github.com/pkg/errors",
     "github.com/spf13/cobra",
     "github.com/spf13/viper",
     "golang.org/x/crypto/ripemd160",

@@ -1,91 +1,117 @@
-package main
+package send
 
 import (
 	"net/http"
 	"bytes"
 	"github.com/btcsuite/btcd/wire"
-	"errors"
 	"encoding/hex"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/rhavar/bustapay/rpc-client"
+	"log"
+	"github.com/rhavar/bustapay/util"
+	"github.com/pkg/errors"
+	"io/ioutil"
 )
 
 func Send(address string, url string, amount int64) error {
+	log.Println("Sending ", amount, " satoshis to ", address, " via url ", url)
 
-	rpcClient, err := NewRpcClient()
+
+	rpcClient, err := rpc_client.NewRpcClient()
 	if err != nil {
 		return err
 	}
 	defer rpcClient.Shutdown()
 
 
+	// Step 1. Create a transaction with correct output
 	unfunded, err := rpcClient.CreateRawTransaction(address, amount)
 	if err != nil {
 		return err
 	}
+	log.Println("Created unfunded transaction: ", util.HexifyTransaction(unfunded))
 
+	// Step 2. Run coin selection, and add change (if applicable)
 	funded, err := rpcClient.FundRawTransaction(unfunded)
 	if err != nil {
 		return err
 	}
+	log.Println("Funded transaction: ", util.HexifyTransaction(funded))
 
+
+	// Step 3. Sign the transaction
 	template, _, err := rpcClient.SignRawTransactionWithWallet(funded)
 	if err != nil {
 		return err
 	}
+	log.Println("Template transaction: ", util.HexifyTransaction(template))
 
-	partial, err := post(template, url)
+
+	// Step 4. Send transaction to receiver
+	log.Println("HTTP POSTing template transaction to ", url)
+	partial, err := httpPost(template, url)
 	if err != nil {
 		return err
 	}
+	log.Println("Got partial transaction back: ", util.HexifyTransaction(partial))
 
+
+	// Step 5. Validate the receiver didn't give us anything funny
 	err = validate(rpcClient, template, partial)
 	if err != nil {
 		return err
 	}
 
-
+	// Step 6. sign the partial transaction
 	final, _, err := rpcClient.SignRawTransactionWithWallet(partial)
 	if err != nil {
 		return err
 	}
+	log.Println("Final transaction: ", util.HexifyTransaction(final))
 
+
+	// Step 7. broadcast the raw transaction
 	_, err = rpcClient.SendRawTransaction(final)
 	if err != nil {
 		return err
 	}
-
+	log.Println("Broadcasted  final transaction: ", final.TxHash())
 
 	return nil
 }
 
 
-func post(tx *wire.MsgTx, url string) (*wire.MsgTx, error) {
+func httpPost(tx *wire.MsgTx, url string) (*wire.MsgTx, error) {
 
 	byteBuffer := bytes.Buffer{}
 	if err := tx.Serialize(&byteBuffer); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	response, err := http.Post(url, "application/binary", &byteBuffer)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	log.Println("Http response: ", string(body))
 
-	// TODO: consider hex encoded responses..
+	// TODO: check response code
 
 
 	var msgTx wire.MsgTx
-	if err := msgTx.Deserialize(response.Body); err != nil {
-		return nil, err
+	if err := msgTx.Deserialize(bytes.NewReader(body)); err != nil {
+		return nil, errors.WithStack(err)
 	}
-
 
 
 	return &msgTx, nil
 }
 
-func validate(rpcClient *RpcClient, template *wire.MsgTx, partial  *wire.MsgTx) error {
+func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial  *wire.MsgTx) error {
 
 	if template.LockTime != partial.LockTime {
 		return errors.New("lock time changed")

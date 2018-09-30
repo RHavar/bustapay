@@ -1,4 +1,4 @@
-package main
+package receive
 
 import (
 	"net/http"
@@ -20,6 +20,10 @@ import (
 	"os"
 	"log"
 	"errors"
+	"github.com/rhavar/bustapay/rpc-client"
+	"github.com/rhavar/bustapay/util"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil/psbt"
 )
 
 
@@ -38,7 +42,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		return nil, newClientError("provided transaction isn't mempool eligible")
 	}
 
-	rpcClient, err := NewRpcClient()
+	rpcClient, err := rpc_client.NewRpcClient()
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +70,11 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	// this is a super inefficient naive way of doing it
 	for vout, txout := range templateTx.TxOut {
 
-		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txout.PkScript, nil)
+		// TODO: configurable chain params?
+		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txout.PkScript, &chaincfg.TestNet3Params)
 
 		if err != nil || len(addresses) != 1  {
+			log.Println("Warning: Could not exact address got: ", err, addresses)
 			continue
 		}
 
@@ -83,6 +89,9 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 			paymentTargetAddress = address
 			paymentTargetAmount = txout.Value
 			paymentTargetVout = vout
+
+			log.Println("Found mine: ", address, " amount: ", txout.Value, " vout: ", vout)
+
 			break
 		}
 	}
@@ -109,6 +118,24 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+
+
+	partialCopy := templateTx.Copy()
+	for _, tin := range partialCopy.TxIn {
+		tin.Witness = nil
+		tin.SignatureScript = nil
+	}
+
+	partialPsbt, err :=  psbt.NewPsbtFromUnsignedTx(partialCopy)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Println("Got psbt: ", partialPsbt.B64Encode())
+
+
+	panic("done for now")
 
 	// Now we're going to create the partially signed transaction
 	partialTransaction := templateTx.Copy()
@@ -149,14 +176,14 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 			break
 		}
 	}
-	Assert(contributedInputIndex >= 0)
+	util.Assert(contributedInputIndex >= 0)
 
 	// we now have a transaction we can ask bitcoin core to sign
 	partialTransaction, complete, err := rpcClient.SafeSignRawTransactionWithWallet(partialTransaction, contributedInputIndex)
 	if err != nil {
 		return nil, err
 	}
-	Assert(!complete)
+	util.Assert(!complete)
 
 	partialTransactionByteBuffer := bytes.Buffer{}
 	err = partialTransaction.Serialize(&partialTransactionByteBuffer)
@@ -200,7 +227,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
 		// open overly long
 		loop := func() bool {
-			rpcClient, err := NewRpcClient()
+			rpcClient, err := rpc_client.NewRpcClient()
 			if err != nil {
 				fmt.Errorf("could not create bitcoin rpc client %v\n", err)
 				return false // dont keep going
@@ -239,7 +266,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 
 // We pick a random unspent, using seed. We intentionally make it very stable, so as long as the seed
 // is the same it'll almost always pick the same unspent (even if the unspent set considerably changes)
-func getRandomUnspent(rpcClient *RpcClient, seed []byte) (*btcjson.ListUnspentResult, error) {
+func getRandomUnspent(rpcClient *rpc_client.RpcClient, seed []byte) (*btcjson.ListUnspentResult, error) {
 
 	unspents, err := rpcClient.ListUnspent()
 	if err != nil {
@@ -255,8 +282,8 @@ func getRandomUnspent(rpcClient *RpcClient, seed []byte) (*btcjson.ListUnspentRe
 	// but if the seed changes, it's a totally different sort
 
 	sort.Slice(unspents, func(i, j int) bool {
-		a := Obfuhash([]byte(unspents[i].TxID), uintToByteSlice(unspents[i].Vout), seed)
-		b := Obfuhash([]byte(unspents[j].TxID), uintToByteSlice(unspents[j].Vout), seed)
+		a := util.Obfuhash([]byte(unspents[i].TxID), uintToByteSlice(unspents[i].Vout), seed)
+		b := util.Obfuhash([]byte(unspents[j].TxID), uintToByteSlice(unspents[j].Vout), seed)
 
 		return bytes.Compare(a, b) < 0
 	})
@@ -330,8 +357,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	w.Write(templateTransaction)
 }
 
-func Receive(port int) {
+func StartServer(port int) {
 	log.Println("Listening on port: ", port)
+
+	http.HandleFunc("/", handler)
+
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))
 }
 

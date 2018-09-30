@@ -1,4 +1,4 @@
-package main
+package rpc_client
 
 import (
 	"github.com/btcsuite/btcd/rpcclient"
@@ -10,7 +10,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/btcjson"
 	"fmt"
-	"errors"
+	"github.com/pkg/errors"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 // This is a wrapper around btcd/rpcclient to make it a bit easier to use
@@ -50,15 +51,24 @@ func (rc *RpcClient) MempoolHasEntry(txid string) bool {
 
 
 func (rc *RpcClient) CreateRawTransaction(address string, amount int64) (*wire.MsgTx, error) {
+
 	addr, err := btcutil.DecodeAddress(address, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
-	outputs := make(map[btcutil.Address]btcutil.Amount, 1)
-	outputs[addr] = btcutil.Amount(amount)
+	// Avoiding rpc call due to: https://github.com/btcsuite/btcd/issues/1311
+	pkScript, err := txscript.PayToAddrScript(addr)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 
-	return rc.rpcClient.CreateRawTransaction(nil, outputs, nil)
+	tx := wire.MsgTx{}
+	tx.AddTxOut(wire.NewTxOut(amount, pkScript))
+
+	// TODO: set the tx lock time to match core..
+
+	return &tx, nil
 }
 
 
@@ -70,32 +80,32 @@ func (rc *RpcClient) FundRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
 
 	byteBuffer := bytes.Buffer{}
 	if err := tx.Serialize(&byteBuffer); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	j, err := json.Marshal(hex.EncodeToString(byteBuffer.Bytes()))
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	rm, err := rc.rpcClient.RawRequest("fundrawtransaction", []json.RawMessage{ j })
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	res := FRTResult{}
 	if err := json.Unmarshal(rm, &res); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	serializedTx, err := hex.DecodeString(res.Hex)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	var msgTx wire.MsgTx
 	if err := msgTx.Deserialize(bytes.NewReader(serializedTx)); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 

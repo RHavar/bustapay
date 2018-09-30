@@ -1,4 +1,4 @@
-package main
+package util
 
 // Assert panics if cond is false.
 func Assert(cond bool) {

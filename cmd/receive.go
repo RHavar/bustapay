@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/rhavar/bustapay/receive"
 )
 
 var receiveCmd = &cobra.Command{
@@ -14,6 +15,7 @@ usage: bustapay receive
 	Run: func(cmd *cobra.Command, args []string) {
 
 
+		receive.StartServer(8080)
 	},
 }
 
