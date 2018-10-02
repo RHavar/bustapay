@@ -1,13 +1,13 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"errors"
 	"github.com/btcsuite/btcutil"
 	"github.com/rhavar/bustapay/send"
-	"strconv"
-	"math"
+	"github.com/spf13/cobra"
 	"log"
+	"math"
+	"strconv"
 )
 
 var sendCmd = &cobra.Command{
@@ -32,15 +32,13 @@ usage: bustapay send $BITCOIN_ADDRESS $BUSTAPAY_URL $AMOUNT_IN_BITCOIN
 			return errors.New("could not parse " + args[2] + " as a floating point number")
 		}
 
-
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 
 		bitcoinAddress := args[0]
-		bustapayUrl  := args[1]
+		bustapayUrl := args[1]
 		amountBtc, _ := strconv.ParseFloat(args[2], 64)
-
 
 		amount := int64(math.Round(amountBtc * 1e8))
 

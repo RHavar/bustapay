@@ -1,33 +1,28 @@
 package receive
 
 import (
-	"net/http"
-	"fmt"
-	"io/ioutil"
-	"encoding/hex"
-	"github.com/btcsuite/btcd/wire"
 	"bytes"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil/txsort"
-	"math/rand"
-	"time"
-	"sort"
 	"encoding/binary"
-	"github.com/btcsuite/btcd/txscript"
+	"encoding/hex"
+	"fmt"
 	"github.com/btcsuite/btcd/btcjson"
-	"math"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil/txsort"
 	"github.com/mitchellh/go-homedir"
-	"os"
-	"log"
-	"errors"
+	"github.com/pkg/errors"
 	"github.com/rhavar/bustapay/rpc-client"
 	"github.com/rhavar/bustapay/util"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil/psbt"
+	"io/ioutil"
+	"log"
+	"math"
+	"math/rand"
+	"net/http"
+	"os"
+	"sort"
 )
-
-
-
 
 func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 
@@ -61,7 +56,6 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		return nil, newClientError("provided transaction isn't mempool eligible")
 	}
 
-
 	var paymentTargetAddress string
 	var paymentTargetAmount int64
 	var paymentTargetVout int
@@ -73,7 +67,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		// TODO: configurable chain params?
 		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txout.PkScript, &chaincfg.TestNet3Params)
 
-		if err != nil || len(addresses) != 1  {
+		if err != nil || len(addresses) != 1 {
 			log.Println("Warning: Could not exact address got: ", err, addresses)
 			continue
 		}
@@ -100,7 +94,6 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		return nil, newClientError("transaction does not pay a wallet address")
 	}
 
-
 	// We're going to reveal one of our unspent, but we're going to base it off
 	// what they sent us. This means they can't keep querying us to find out our unspent
 	// because we'll keep giving them the same one back
@@ -108,34 +101,15 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	var templateSeed chainhash.Hash // zero initialized
 
 	for _, txIn := range templateTx.TxIn {
-		if  bytes.Compare(templateSeed[:], txIn.PreviousOutPoint.Hash[:]) < 1 {
+		if bytes.Compare(templateSeed[:], txIn.PreviousOutPoint.Hash[:]) < 1 {
 			templateSeed = txIn.PreviousOutPoint.Hash
 		}
 	}
-
 
 	contributingUnspent, err := getRandomUnspent(rpcClient, templateSeed[:])
 	if err != nil {
 		return nil, err
 	}
-
-
-
-	partialCopy := templateTx.Copy()
-	for _, tin := range partialCopy.TxIn {
-		tin.Witness = nil
-		tin.SignatureScript = nil
-	}
-
-	partialPsbt, err :=  psbt.NewPsbtFromUnsignedTx(partialCopy)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println("Got psbt: ", partialPsbt.B64Encode())
-
-
-	panic("done for now")
 
 	// Now we're going to create the partially signed transaction
 	partialTransaction := templateTx.Copy()
@@ -145,8 +119,8 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		txin.Witness = nil // clear the witness
 	}
 
-
-	partialTransaction.TxOut[paymentTargetVout].Value += int64(math.Round(contributingUnspent.Amount * 1e8))
+	contribAmount := int64(math.Round(contributingUnspent.Amount * 1e8))
+	partialTransaction.TxOut[paymentTargetVout].Value += contribAmount
 
 	inputHash, err := chainhash.NewHashFromStr(contributingUnspent.TxID)
 	if err != nil {
@@ -178,12 +152,23 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	}
 	util.Assert(contributedInputIndex >= 0)
 
-	// we now have a transaction we can ask bitcoin core to sign
-	partialTransaction, complete, err := rpcClient.SafeSignRawTransactionWithWallet(partialTransaction, contributedInputIndex)
+	log.Println("Want to sign partial transaction: ", util.HexifyTransaction(partialTransaction))
+
+	partialTransaction, _, err = rpcClient.SignRawTransactionWithWallet(partialTransaction)
 	if err != nil {
 		return nil, err
 	}
-	util.Assert(!complete)
+
+	log.Println("Post signing transaction: ", util.HexifyTransaction(partialTransaction))
+
+	// Out of abundant paranoia, we're going to clear the witnesses for all inputs we should not have signed
+	for i, txIn := range partialTransaction.TxIn {
+		if i != contributedInputIndex {
+			txIn.Witness = nil
+		}
+	}
+
+	log.Println("Final partial transaction: ", util.HexifyTransaction(partialTransaction))
 
 	partialTransactionByteBuffer := bytes.Buffer{}
 	err = partialTransaction.Serialize(&partialTransactionByteBuffer)
@@ -211,7 +196,6 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	fmt.Fprintf(file, "%v", paymentTargetAmount)
 	file.Close()
 
-
 	// Write the template transaction
 	file, err = os.Create(txDir + "/template_transaction.hex")
 	fmt.Fprint(file, hex.EncodeToString(templateTransactionByteBuffer.Bytes()))
@@ -222,47 +206,44 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	fmt.Fprint(file, hex.EncodeToString(partialTransactionByteBuffer.Bytes()))
 	file.Close()
 
+	//go func() {
+	//	// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
+	//	// open overly long
+	//	loop := func() bool {
+	//		rpcClient, err := rpc_client.NewRpcClient()
+	//		if err != nil {
+	//			fmt.Errorf("could not create bitcoin rpc client %v\n", err)
+	//			return false // dont keep going
+	//		}
+	//		defer rpcClient.Shutdown()
+	//
+	//
+	//
+	//		if rpcClient.MempoolHasEntry(partialTransaction.TxHash().String()) {
+	//			fmt.Errorf("Yay. Finalized transaction %v was found in mempool! Monitoring the situation\n", finalTxId)
+	//			// TODO: we should probably log it..
+	//			return true // keep looping
+	//		}
+	//
+	//		// The main two cases that the finalized transaction might not be in the mempool is because it's already confirmed
+	//		// or because it was never created. If we were smart we could differintiate the two, but really it doesn't matter.
+	//		// We'll just blindly try send the original and if the finalized one has already confirmed it will just conflict
+	//		// and be filtered out.
+	//
+	//		_, err = rpcClient.SendRawTransaction(templateTx)
+	//		log.Println("Blindly trying to send template transaction ", finalTxId, " got error: ", err)
+	//		return false // we're all done
+	//	}
+	//
+	//	continueLooping := true
+	//	for continueLooping {
+	//		time.Sleep(5 * time.Minute)
+	//		continueLooping = loop()
+	//	}
+	//}()
 
-	go func() {
-		// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
-		// open overly long
-		loop := func() bool {
-			rpcClient, err := rpc_client.NewRpcClient()
-			if err != nil {
-				fmt.Errorf("could not create bitcoin rpc client %v\n", err)
-				return false // dont keep going
-			}
-			defer rpcClient.Shutdown()
-
-
-
-			if rpcClient.MempoolHasEntry(partialTransaction.TxHash().String()) {
-				fmt.Errorf("Yay. Finalized transaction %v was found in mempool! Monitoring the situation\n", finalTxId)
-				// TODO: we should probably log it..
-				return true // keep looping
-			}
-
-			// The main two cases that the finalized transaction might not be in the mempool is because it's already confirmed
-			// or because it was never created. If we were smart we could differintiate the two, but really it doesn't matter.
-			// We'll just blindly try send the original and if the finalized one has already confirmed it will just conflict
-			// and be filtered out.
-
-			_, err = rpcClient.SendRawTransaction(templateTx)
-			log.Println("Blindly trying to send template transaction ", finalTxId, " got error: ", err)
-			return false // we're all done
-		}
-
-		continueLooping := true
-		for continueLooping {
-			time.Sleep(5 * time.Minute)
-			continueLooping = loop()
-		}
-	}()
-
-	return templateTransactionByteBuffer.Bytes(), nil
+	return partialTransactionByteBuffer.Bytes(), nil
 }
-
-
 
 // We pick a random unspent, using seed. We intentionally make it very stable, so as long as the seed
 // is the same it'll almost always pick the same unspent (even if the unspent set considerably changes)
@@ -296,8 +277,6 @@ func uintToByteSlice(x uint32) []byte {
 	binary.LittleEndian.PutUint32(bs, x)
 	return bs
 }
-
-
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -336,14 +315,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-
 	var msgTx wire.MsgTx
 	if err := msgTx.Deserialize(bytes.NewBuffer(txBytes)); err != nil {
 		w.WriteHeader(400)
 		fmt.Fprint(w, "http body was not a valid bitcoin transaction")
 		return
 	}
-
 
 	templateTransaction, err := createBustpayTransaction(&msgTx)
 
@@ -365,7 +342,6 @@ func StartServer(port int) {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))
 }
 
-
 func newClientError(s string) error {
 	return errors.New(s)
 }
@@ -373,7 +349,7 @@ func newClientError(s string) error {
 var dataDirectory string
 
 func init() {
-	dir, err  := homedir.Dir()
+	dir, err := homedir.Dir()
 	if err != nil {
 		panic(err)
 	}

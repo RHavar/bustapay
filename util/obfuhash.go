@@ -11,7 +11,6 @@ import (
 // Note 1 that this is *NOT* consistent between runs. If it was desirable to make it so, the hiddenValue could be
 // stored on disk
 
-
 func Obfuhash(pre ...[]byte) []byte {
 	h := ripemd160.New()
 	for _, p := range pre {
@@ -21,15 +20,13 @@ func Obfuhash(pre ...[]byte) []byte {
 	return h.Sum(nil)
 }
 
-
-
 var hashObfuscationSeed []byte
 
 func init() {
 	seedSize := 16
 
 	hashObsfucationSeed := make([]byte, seedSize)
-	if _, err := rand.Read(hashObsfucationSeed) ; err != nil {
+	if _, err := rand.Read(hashObsfucationSeed); err != nil {
 		panic(err)
 	}
 }

@@ -1,9 +1,9 @@
 package util
 
 import (
-	"github.com/btcsuite/btcd/wire"
 	"bytes"
 	"encoding/hex"
+	"github.com/btcsuite/btcd/wire"
 )
 
 func SerializeTransaction(tx *wire.MsgTx) []byte {
@@ -18,4 +18,3 @@ func SerializeTransaction(tx *wire.MsgTx) []byte {
 func HexifyTransaction(tx *wire.MsgTx) string {
 	return hex.EncodeToString(SerializeTransaction(tx))
 }
-

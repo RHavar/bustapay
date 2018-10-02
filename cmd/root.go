@@ -15,7 +15,7 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "bustapay",
 	Short: "A reference implementation of bustapay",
-	Long: `This functions as a wrapper around bitcoin core using rpc commands`,
+	Long:  `This functions as a wrapper around bitcoin core using rpc commands`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -31,7 +31,6 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.bustapay.yaml)")
-
 
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

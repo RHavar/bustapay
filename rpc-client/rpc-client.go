@@ -1,17 +1,17 @@
 package rpc_client
 
 import (
-	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcd/wire"
-	"encoding/json"
 	"bytes"
 	"encoding/hex"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/btcjson"
+	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"github.com/pkg/errors"
 )
 
 // This is a wrapper around btcd/rpcclient to make it a bit easier to use
@@ -32,7 +32,7 @@ func NewRpcClient() (*RpcClient, error) {
 
 	rpcClient, err := rpcclient.New(cfg, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return &RpcClient{rpcClient: rpcClient}, nil
@@ -48,7 +48,6 @@ func (rc *RpcClient) MempoolHasEntry(txid string) bool {
 	return err == nil && entry != nil
 
 }
-
 
 func (rc *RpcClient) CreateRawTransaction(address string, amount int64) (*wire.MsgTx, error) {
 
@@ -71,7 +70,6 @@ func (rc *RpcClient) CreateRawTransaction(address string, amount int64) (*wire.M
 	return &tx, nil
 }
 
-
 type FRTResult struct {
 	Hex string `json:"hex"`
 }
@@ -88,7 +86,7 @@ func (rc *RpcClient) FundRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
 		return nil, errors.WithStack(err)
 	}
 
-	rm, err := rc.rpcClient.RawRequest("fundrawtransaction", []json.RawMessage{ j })
+	rm, err := rc.rpcClient.RawRequest("fundrawtransaction", []json.RawMessage{j})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -108,7 +106,6 @@ func (rc *RpcClient) FundRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
 		return nil, errors.WithStack(err)
 	}
 
-
 	return &msgTx, nil
 }
 
@@ -116,39 +113,37 @@ func (rc *RpcClient) SendRawTransaction(tx *wire.MsgTx) (*chainhash.Hash, error)
 	return rc.rpcClient.SendRawTransaction(tx, false)
 }
 
-
-
 func (rc *RpcClient) SignRawTransactionWithWallet(tx *wire.MsgTx) (*wire.MsgTx, bool, error) {
 	txByteBuffer := bytes.Buffer{}
 	err := tx.Serialize(&txByteBuffer)
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	jsonData, err := json.Marshal(hex.EncodeToString(txByteBuffer.Bytes()))
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	resultJson, err := rc.rpcClient.RawRequest("signrawtransactionwithwallet", []json.RawMessage{jsonData})
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	var result SignRawTransactionResult
 	err = json.Unmarshal(resultJson, &result)
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	txBytes, err := hex.DecodeString(result.Hex)
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	newTx, err := btcutil.NewTxFromBytes(txBytes)
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
 
 	return newTx.MsgTx(), result.Complete, nil
@@ -164,14 +159,12 @@ type SignRawTransactionResult struct {
 func (rc *RpcClient) SafeSignRawTransactionWithWallet(tx *wire.MsgTx, inputToSign int) (*wire.MsgTx, bool, error) {
 	res, complete, err := rc.SignRawTransactionWithWallet(tx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, errors.WithStack(err)
 	}
-
 
 	for i := 0; i < len(tx.TxIn); i++ {
 		originalTxIn := tx.TxIn[i]
 		newTxIn := res.TxIn[i]
-
 
 		we := witnessEqual(originalTxIn.Witness, newTxIn.Witness)
 
@@ -240,15 +233,13 @@ func (rc *RpcClient) TestMempoolAccept(tx *wire.MsgTx) (bool, error) {
 		return false, err
 	}
 
-
 	return result[0].Allowed, nil
 }
-
 
 // This is extremely unoptimized! It will be painful on a large wallet
 func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 
-	info, err :=  rc.GetAddressInfo(address)
+	info, err := rc.GetAddressInfo(address)
 	if err != nil {
 		return false, nil
 	}
@@ -269,8 +260,7 @@ func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 
 	}
 
-
-	return  true, nil
+	return true, nil
 }
 
 func (rc *RpcClient) ListUnspent() ([]btcjson.ListUnspentResult, error) {
@@ -278,11 +268,11 @@ func (rc *RpcClient) ListUnspent() ([]btcjson.ListUnspentResult, error) {
 	return rc.rpcClient.ListUnspent()
 }
 
-
 type AddressInfoResult struct {
 	Address string `json:"address"`
 	IsMine  bool   `json:"ismine"`
 }
+
 func (rc *RpcClient) GetAddressInfo(address string) (*AddressInfoResult, error) {
 
 	jsonData, err := json.Marshal(address)
@@ -300,7 +290,6 @@ func (rc *RpcClient) GetAddressInfo(address string) (*AddressInfoResult, error) 
 	if err != nil {
 		return nil, err
 	}
-
 
 	return &result, nil
 }
