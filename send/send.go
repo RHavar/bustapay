@@ -3,19 +3,19 @@ package send
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/pkg/errors"
 	"github.com/rhavar/bustapay/rpc-client"
 	"github.com/rhavar/bustapay/util"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 )
 
 func Send(address string, url string, amount int64) error {
-	log.Println("Sending ", amount, " satoshis to ", address, " via url ", url)
+	util.VerboseLog("Sending ", amount, " satoshis to ", address, " via url ", url)
 
 	rpcClient, err := rpc_client.NewRpcClient()
 	if err != nil {
@@ -28,29 +28,28 @@ func Send(address string, url string, amount int64) error {
 	if err != nil {
 		return err
 	}
-	log.Println("Created unfunded transaction: ", util.HexifyTransaction(unfunded))
+	util.VerboseLog("Created unfunded transaction: ", util.HexifyTransaction(unfunded))
 
 	// Step 2. Run coin selection, and add change (if applicable)
 	funded, err := rpcClient.FundRawTransaction(unfunded)
 	if err != nil {
 		return err
 	}
-	log.Println("Funded transaction: ", util.HexifyTransaction(funded))
+	util.VerboseLog("Funded transaction: ", util.HexifyTransaction(funded))
 
 	// Step 3. Sign the transaction
 	template, _, err := rpcClient.SignRawTransactionWithWallet(funded)
 	if err != nil {
 		return err
 	}
-	log.Println("Template transaction: ", util.HexifyTransaction(template))
+	util.VerboseLog("Template transaction: ", util.HexifyTransaction(template))
 
 	// Step 4. Send transaction to receiver
-	log.Println("HTTP POSTing template transaction to ", url)
 	partial, err := httpPost(template, url)
 	if err != nil {
 		return err
 	}
-	log.Println("Got partial transaction back: ", util.HexifyTransaction(partial))
+	util.VerboseLog("Got partial transaction back: ", util.HexifyTransaction(partial))
 
 	// Step 5. Validate the receiver didn't give us anything funny
 	err = validate(rpcClient, template, partial)
@@ -63,14 +62,16 @@ func Send(address string, url string, amount int64) error {
 	if err != nil {
 		return err
 	}
-	log.Println("Final transaction: ", util.HexifyTransaction(final))
+	util.VerboseLog("Final transaction: ", util.HexifyTransaction(final))
 
 	// Step 7. broadcast the raw transaction
 	_, err = rpcClient.SendRawTransaction(final)
 	if err != nil {
 		return err
 	}
-	log.Println("Broadcasted  final transaction: ", final.TxHash())
+	util.VerboseLog("Broadcasted final transaction")
+
+	fmt.Println(final.TxHash())
 
 	return nil
 }
@@ -82,19 +83,20 @@ func httpPost(tx *wire.MsgTx, url string) (*wire.MsgTx, error) {
 		return nil, errors.WithStack(err)
 	}
 
+	util.VerboseLog("HTTP POSTing template transaction to ", url)
 	response, err := http.Post(url, "application/binary", &byteBuffer)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
 	if response.StatusCode != 200 {
-		log.Println("Got http status code: ", response.StatusCode)
+		util.VerboseLog("Got http status code: ", response.StatusCode)
 
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
-		log.Println("Http response body: ", string(body))
+		util.VerboseLog("Http response body: ", string(body))
 		return nil, errors.New("got http error from server")
 	}
 
@@ -171,7 +173,6 @@ func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial *wi
 
 			contributedInputAmount = int64(math.Round(txOut.Value * 1e8))
 
-			log.Println("Checking ", scriptPubKey, " index ", i, " with amount: ", contributedInputAmount)
 			engine, err := txscript.NewEngine(scriptPubKey, partial, i, txscript.StandardVerifyFlags, nil, nil, contributedInputAmount)
 			if err != nil {
 				return errors.WithStack(err)
@@ -206,8 +207,6 @@ func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial *wi
 				return errors.New("more than 1 output has had its value changed")
 			}
 			seenDestination = true
-
-			log.Println("original.value: ", original.Value, " contributedInputAmount: ", contributedInputAmount, " txOut.value: ", txOut.Value)
 
 			if original.Value+contributedInputAmount != txOut.Value {
 				return errors.New("output value doesnt match original + contributed input amount")

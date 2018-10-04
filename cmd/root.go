@@ -30,9 +30,10 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.bustapay.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.bustapay/config.yaml)")
 
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose printing")
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -48,15 +49,20 @@ func initConfig() {
 			os.Exit(1)
 		}
 
-		// Search config in home directory with name ".bustapay" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".bustapay")
+		viper.AddConfigPath(home + "/.bustapay")
+		viper.SetConfigName("config")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		if viper.GetBool("verbose") {
+			fmt.Println("Using config file:", viper.ConfigFileUsed())
+		}
+	}
+
+	if viper.GetBool("verbose") {
+		fmt.Println("Verbose mode enabled!")
 	}
 }

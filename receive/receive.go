@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"time"
 )
 
 func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
@@ -84,8 +85,6 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 			paymentTargetAmount = txout.Value
 			paymentTargetVout = vout
 
-			log.Println("Found mine: ", address, " amount: ", txout.Value, " vout: ", vout)
-
 			break
 		}
 	}
@@ -97,16 +96,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	// We're going to reveal one of our unspent, but we're going to base it off
 	// what they sent us. This means they can't keep querying us to find out our unspent
 	// because we'll keep giving them the same one back
-
-	var templateSeed chainhash.Hash // zero initialized
-
-	for _, txIn := range templateTx.TxIn {
-		if bytes.Compare(templateSeed[:], txIn.PreviousOutPoint.Hash[:]) < 1 {
-			templateSeed = txIn.PreviousOutPoint.Hash
-		}
-	}
-
-	contributingUnspent, err := getRandomUnspent(rpcClient, templateSeed[:])
+	contributingUnspent, err := getRandomUnspent(rpcClient, templateTx)
 	if err != nil {
 		return nil, err
 	}
@@ -152,14 +142,10 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	}
 	util.Assert(contributedInputIndex >= 0)
 
-	log.Println("Want to sign partial transaction: ", util.HexifyTransaction(partialTransaction))
-
 	partialTransaction, _, err = rpcClient.SignRawTransactionWithWallet(partialTransaction)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Println("Post signing transaction: ", util.HexifyTransaction(partialTransaction))
 
 	// Out of abundant paranoia, we're going to clear the witnesses for all inputs we should not have signed
 	for i, txIn := range partialTransaction.TxIn {
@@ -168,7 +154,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 		}
 	}
 
-	log.Println("Final partial transaction: ", util.HexifyTransaction(partialTransaction))
+	util.VerboseLog("Final partial transaction: ", util.HexifyTransaction(partialTransaction))
 
 	partialTransactionByteBuffer := bytes.Buffer{}
 	err = partialTransaction.Serialize(&partialTransactionByteBuffer)
@@ -206,56 +192,59 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	fmt.Fprint(file, hex.EncodeToString(partialTransactionByteBuffer.Bytes()))
 	file.Close()
 
-	//go func() {
-	//	// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
-	//	// open overly long
-	//	loop := func() bool {
-	//		rpcClient, err := rpc_client.NewRpcClient()
-	//		if err != nil {
-	//			fmt.Errorf("could not create bitcoin rpc client %v\n", err)
-	//			return false // dont keep going
-	//		}
-	//		defer rpcClient.Shutdown()
-	//
-	//
-	//
-	//		if rpcClient.MempoolHasEntry(partialTransaction.TxHash().String()) {
-	//			fmt.Errorf("Yay. Finalized transaction %v was found in mempool! Monitoring the situation\n", finalTxId)
-	//			// TODO: we should probably log it..
-	//			return true // keep looping
-	//		}
-	//
-	//		// The main two cases that the finalized transaction might not be in the mempool is because it's already confirmed
-	//		// or because it was never created. If we were smart we could differintiate the two, but really it doesn't matter.
-	//		// We'll just blindly try send the original and if the finalized one has already confirmed it will just conflict
-	//		// and be filtered out.
-	//
-	//		_, err = rpcClient.SendRawTransaction(templateTx)
-	//		log.Println("Blindly trying to send template transaction ", finalTxId, " got error: ", err)
-	//		return false // we're all done
-	//	}
-	//
-	//	continueLooping := true
-	//	for continueLooping {
-	//		time.Sleep(5 * time.Minute)
-	//		continueLooping = loop()
-	//	}
-	//}()
+	go func() {
+		// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
+		// open overly long
+		loop := func() bool {
+			rpcClient, err := rpc_client.NewRpcClient()
+			if err != nil {
+				fmt.Errorf("could not create bitcoin rpc client %v\n", err)
+				return false // dont keep going
+			}
+			defer rpcClient.Shutdown()
+
+			if rpcClient.MempoolHasEntry(partialTransaction.TxHash().String()) {
+				fmt.Errorf("Yay. Finalized transaction %v was found in mempool! Monitoring the situation\n", finalTxId)
+				// TODO: we should probably log it..
+				return true // keep looping
+			}
+
+			// The main two cases that the finalized transaction might not be in the mempool is because it's already confirmed
+			// or because it was never created. If we were smart we could differintiate the two, but really it doesn't matter.
+			// We'll just blindly try send the original and if the finalized one has already confirmed it will just conflict
+			// and be filtered out.
+
+			_, err = rpcClient.SendRawTransaction(templateTx)
+			log.Println("Blindly trying to send template transaction ", finalTxId, " got error: ", err)
+			return false // we're all done
+		}
+
+		continueLooping := true
+		for continueLooping {
+			time.Sleep(5 * time.Minute)
+			continueLooping = loop()
+		}
+	}()
 
 	return partialTransactionByteBuffer.Bytes(), nil
 }
 
 // We pick a random unspent, using seed. We intentionally make it very stable, so as long as the seed
 // is the same it'll almost always pick the same unspent (even if the unspent set considerably changes)
-func getRandomUnspent(rpcClient *rpc_client.RpcClient, seed []byte) (*btcjson.ListUnspentResult, error) {
+func getRandomUnspent(rpcClient *rpc_client.RpcClient, templateTx *wire.MsgTx) (*btcjson.ListUnspentResult, error) {
+
+	var seed chainhash.Hash // zero initialized
+
+	for _, txIn := range templateTx.TxIn {
+		if bytes.Compare(seed[:], txIn.PreviousOutPoint.Hash[:]) < 1 {
+			seed = txIn.PreviousOutPoint.Hash
+		}
+	}
+	util.Assert(!bytes.Equal(seed[:], new(chainhash.Hash)[:])) // seed shouldn't stay zero init..
 
 	unspents, err := rpcClient.ListUnspent()
 	if err != nil {
 		return nil, err
-	}
-
-	if len(unspents) == 0 {
-		return nil, errors.New("no available unspents :/")
 	}
 
 	// We are going to sort these elements by the hash of their  (txid,vout,seed)
@@ -263,13 +252,33 @@ func getRandomUnspent(rpcClient *rpc_client.RpcClient, seed []byte) (*btcjson.Li
 	// but if the seed changes, it's a totally different sort
 
 	sort.Slice(unspents, func(i, j int) bool {
-		a := util.Obfuhash([]byte(unspents[i].TxID), uintToByteSlice(unspents[i].Vout), seed)
-		b := util.Obfuhash([]byte(unspents[j].TxID), uintToByteSlice(unspents[j].Vout), seed)
+		a := util.Obfuhash([]byte(unspents[i].TxID), uintToByteSlice(unspents[i].Vout), seed[:])
+		b := util.Obfuhash([]byte(unspents[j].TxID), uintToByteSlice(unspents[j].Vout), seed[:])
 
 		return bytes.Compare(a, b) < 0
 	})
 
-	return &unspents[0], nil
+
+	// Just really for testing, when doing a bustapay to ourselves we
+	// never want to pick an unspent that is already in the bustapay transaction
+	for _, unspent := range unspents {
+
+		alreadyContains := false
+
+		for _, txIn := range templateTx.TxIn {
+			if txIn.PreviousOutPoint.String() == fmt.Sprintf("%v:%v", unspent.TxID, unspent.Vout) {
+				log.Println("Warning: Tried to pick an already used input. Skipping ", unspent.TxID, ":", unspent.Vout)
+				alreadyContains = true
+				break
+			}
+		}
+
+		if !alreadyContains {
+			return &unspent, nil
+		}
+	}
+
+	return nil, errors.New("no available unspents :/")
 }
 
 func uintToByteSlice(x uint32) []byte {
@@ -315,14 +324,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	var msgTx wire.MsgTx
+	msgTx := &wire.MsgTx{}
 	if err := msgTx.Deserialize(bytes.NewBuffer(txBytes)); err != nil {
 		w.WriteHeader(400)
 		fmt.Fprint(w, "http body was not a valid bitcoin transaction")
 		return
 	}
 
-	templateTransaction, err := createBustpayTransaction(&msgTx)
+	util.VerboseLog("Got a template transaction: ", msgTx.TxHash(), " hex: ", util.HexifyTransaction(msgTx))
+
+	templateTransaction, err := createBustpayTransaction(msgTx)
 
 	if err != nil {
 		w.WriteHeader(400)
@@ -336,6 +347,21 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func StartServer(port int) {
 	log.Println("Listening on port: ", port)
+
+	go func() {
+		// For debugging
+		rpcClient, err := rpc_client.NewRpcClient()
+		if err != nil {
+			panic(err)
+		}
+		defer rpcClient.Shutdown()
+
+		addr, err := rpcClient.GetNewAddress()
+		if err != nil {
+			panic(err)
+		}
+		util.VerboseLog("Debug receive address: ", addr)
+	}()
 
 	http.HandleFunc("/", handler)
 
@@ -355,5 +381,8 @@ func init() {
 	}
 
 	dataDirectory = dir + "/.bustapay"
+	os.Mkdir(dataDirectory, 0700)
+
+	dataDirectory = dataDirectory + "/data"
 	os.Mkdir(dataDirectory, 0700)
 }

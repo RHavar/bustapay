@@ -42,6 +42,14 @@ func (rc *RpcClient) Shutdown() {
 	rc.rpcClient.Shutdown()
 }
 
+func (rc *RpcClient) GetNewAddress() (btcutil.Address, error) {
+	addr, err := rc.rpcClient.GetNewAddress("")
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return addr, nil
+}
+
 // hacky, eats errors...
 func (rc *RpcClient) MempoolHasEntry(txid string) bool {
 	entry, err := rc.rpcClient.GetMempoolEntry(txid)
@@ -264,8 +272,11 @@ func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 }
 
 func (rc *RpcClient) ListUnspent() ([]btcjson.ListUnspentResult, error) {
-
-	return rc.rpcClient.ListUnspent()
+	unspent, err := rc.rpcClient.ListUnspent()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return unspent, nil
 }
 
 type AddressInfoResult struct {
