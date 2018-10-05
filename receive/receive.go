@@ -350,7 +350,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	w.Write(templateTransaction)
 }
 
-func StartServer(port int) {
+func StartServer(port int32) {
 	log.Println("Listening on port: ", port)
 
 	go func() {

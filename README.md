@@ -49,6 +49,10 @@ Receiving
 
 bustapay receive
 
+
+Also supports the configuration option `--port xxx` to configure which port to listen to (default 8080)
+
+
 Which will create an HTTP server that listens for bustapay payments. To avoid making it too opinionated and bringing in a proper database it stores bustapay transactions as a flat file. For each received bustapay transaction it will create the directory:
 
 ~/.bustapay/data/$FINAL_TRANSACTION_ID
