@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -61,12 +60,18 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	var paymentTargetAmount int64
 	var paymentTargetVout int
 
+
+
+	chainParams, err := rpcClient.GetChainParams()
+	if err != nil {
+		return nil, err
+	}
+
 	// We need to find which address of ours it's paying (if in fact it even is...)
 	// this is a super inefficient naive way of doing it
 	for vout, txout := range templateTx.TxOut {
 
-		// TODO: configurable chain params?
-		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txout.PkScript, &chaincfg.TestNet3Params)
+		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txout.PkScript, chainParams)
 
 		if err != nil || len(addresses) != 1 {
 			log.Println("Warning: Could not exact address got: ", err, addresses)

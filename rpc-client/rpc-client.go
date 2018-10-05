@@ -14,6 +14,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"github.com/rhavar/bustapay/util"
+	"github.com/btcsuite/btcd/chaincfg"
+	"regexp"
+	"log"
 )
 
 // This is a wrapper around btcd/rpcclient to make it a bit easier to use
@@ -50,6 +53,33 @@ func NewRpcClient() (*RpcClient, error) {
 func (rc *RpcClient) Shutdown() {
 	rc.rpcClient.Shutdown()
 }
+
+
+var memoizoidChain *chaincfg.Params
+func (rc *RpcClient) GetChainParams() (*chaincfg.Params, error) {
+	if memoizoidChain != nil {
+		return memoizoidChain, nil
+	}
+
+	info, err := rc.rpcClient.GetBlockChainInfo()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	switch chain := info.Chain; chain {
+	case "main":
+		memoizoidChain = &chaincfg.MainNetParams
+	case "test":
+		memoizoidChain = &chaincfg.TestNet3Params
+	case "regtest":
+		memoizoidChain = &chaincfg.SimNetParams
+	default:
+		panic("unexpected chain: " + chain)
+	}
+
+	return memoizoidChain, nil
+}
+
 
 func (rc *RpcClient) GetNewAddress() (btcutil.Address, error) {
 	addr, err := rc.rpcClient.GetNewAddress("")
@@ -261,7 +291,7 @@ func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 		return false, nil
 	}
 
-	if !info.IsMine {
+	if !info.IsMine || info.IsChange {
 		return false, nil
 	}
 
@@ -289,9 +319,14 @@ func (rc *RpcClient) ListUnspent() ([]btcjson.ListUnspentResult, error) {
 }
 
 type AddressInfoResult struct {
-	Address string `json:"address"`
-	IsMine  bool   `json:"ismine"`
+	Address   string `json:"address"`
+	IsMine    bool   `json:"ismine"`
+	HdKeyPath string `json:"hdkeypath"`
+	IsChange  bool
 }
+
+// hack to detect change. Change hdpath looks like  m/0'/1'/9999999'
+var changeHdPathRegex = regexp.MustCompile(`m/0'/1'/\d+'`)
 
 func (rc *RpcClient) GetAddressInfo(address string) (*AddressInfoResult, error) {
 
@@ -310,6 +345,11 @@ func (rc *RpcClient) GetAddressInfo(address string) (*AddressInfoResult, error) 
 	if err != nil {
 		return nil, err
 	}
+
+	result.IsChange = changeHdPathRegex.MatchString(result.HdKeyPath)
+
+	log.Println("Address: ", address, " is change: ", result.IsChange)
+
 
 	return &result, nil
 }
