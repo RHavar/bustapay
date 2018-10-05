@@ -34,6 +34,19 @@ func init() {
 
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose printing")
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+
+
+	rootCmd.PersistentFlags().String("bitcoind_host", "localhost", "bitcoind host to connect to")
+	viper.BindPFlag("bitcoind_host", rootCmd.PersistentFlags().Lookup("bitcoind_host"))
+
+	rootCmd.PersistentFlags().String("bitcoind_port", "8332", "bitcoind port to connect to")
+	viper.BindPFlag("bitcoind_port", rootCmd.PersistentFlags().Lookup("bitcoind_port"))
+
+	rootCmd.PersistentFlags().String("bitcoind_user", "", "bitcoind user to connect to")
+	viper.BindPFlag("bitcoind_user", rootCmd.PersistentFlags().Lookup("bitcoind_user"))
+
+	rootCmd.PersistentFlags().String("bitcoind_pass", "", "bitcoind pass to connect to")
+	viper.BindPFlag("bitcoind_pass", rootCmd.PersistentFlags().Lookup("bitcoind_pass"))
 }
 
 // initConfig reads in config file and ENV variables if set.

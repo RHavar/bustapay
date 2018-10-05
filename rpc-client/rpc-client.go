@@ -12,6 +12,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
+	"github.com/rhavar/bustapay/util"
 )
 
 // This is a wrapper around btcd/rpcclient to make it a bit easier to use
@@ -22,10 +24,17 @@ type RpcClient struct {
 /// The caller must always becareful to call client.Shutdown()!
 func NewRpcClient() (*RpcClient, error) {
 
+	host := viper.GetString("bitcoind_host") + ":" + viper.GetString("bitcoind_port")
+	user := viper.GetString("bitcoind_user")
+	pass := viper.GetString("bitcoind_pass")
+
+	util.VerboseLog("Connecting to ", host, " with ", user, " and using pass ", pass != "")
+
+
 	cfg := &rpcclient.ConnConfig{
-		Host:         "localhost:18332",
-		User:         "Ulysseys",
-		Pass:         "ZWHqhL4Xf9JMokLPzd4eeD",
+		Host:         host,
+		User:         user,
+		Pass:         pass,
 		HTTPPostMode: true, // Bitcoin only supports HTTP POST mode
 		DisableTLS:   true, // Bitcoin does not provide TLS by default
 	}
