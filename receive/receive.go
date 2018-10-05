@@ -215,7 +215,7 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 			// and be filtered out.
 
 			_, err = rpcClient.SendRawTransaction(templateTx)
-			log.Println("Blindly trying to send template transaction ", finalTxId, " got error: ", err)
+			util.VerboseLog("Blindly trying to send template transaction ", partialTransaction.TxHash().String(), " got error: ", err)
 			return false // we're all done
 		}
 
