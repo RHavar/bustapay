@@ -8,7 +8,6 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/pkg/errors"
@@ -16,7 +15,6 @@ import (
 	"github.com/rhavar/bustapay/util"
 	"github.com/btcsuite/btcd/chaincfg"
 	"regexp"
-	"log"
 )
 
 // This is a wrapper around btcd/rpcclient to make it a bit easier to use
@@ -96,39 +94,45 @@ func (rc *RpcClient) MempoolHasEntry(txid string) bool {
 
 }
 
-func (rc *RpcClient) CreateRawTransaction(address string, amount int64) (*wire.MsgTx, error) {
 
-	addr, err := btcutil.DecodeAddress(address, nil)
+// return hexstring (isntead of a *tx to work around btcutil serialization bugs...
+func (rc *RpcClient) CreateRawTransaction(address string, amount int64) (string, error) {
+
+
+	inputs := []byte("[]")
+	outputs, err := json.Marshal(map[string]float64{ address: float64(amount)/1e8 })
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return "", errors.WithStack(err)
+	}
+	lockTime := []byte("0")
+	replaceable := []byte("true")
+
+
+	resp, err := rc.rpcClient.RawRequest("createrawtransaction", []json.RawMessage{ inputs, outputs, lockTime, replaceable })
+	if err != nil {
+		return "", errors.WithStack(err)
 	}
 
-	// Avoiding rpc call due to: https://github.com/btcsuite/btcd/issues/1311
-	pkScript, err := txscript.PayToAddrScript(addr)
+	var hexString string
+
+	err = json.Unmarshal(resp, &hexString)
+
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
-	tx := wire.MsgTx{}
-	tx.AddTxOut(wire.NewTxOut(amount, pkScript))
-
-	// TODO: set the tx lock time to match core..
-
-	return &tx, nil
+	return hexString, nil
 }
 
 type FRTResult struct {
 	Hex string `json:"hex"`
 }
 
-func (rc *RpcClient) FundRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
+// Takes a hexstring instead of a *wire.MsgTx to work around btcutil serialization bugs...
+func (rc *RpcClient) FundRawTransaction(rawTx string) (*wire.MsgTx, error) {
 
-	byteBuffer := bytes.Buffer{}
-	if err := tx.Serialize(&byteBuffer); err != nil {
-		return nil, errors.WithStack(err)
-	}
 
-	j, err := json.Marshal(hex.EncodeToString(byteBuffer.Bytes()))
+	j, err := json.Marshal(rawTx)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -347,9 +351,6 @@ func (rc *RpcClient) GetAddressInfo(address string) (*AddressInfoResult, error) 
 	}
 
 	result.IsChange = changeHdPathRegex.MatchString(result.HdKeyPath)
-
-	log.Println("Address: ", address, " is change: ", result.IsChange)
-
 
 	return &result, nil
 }

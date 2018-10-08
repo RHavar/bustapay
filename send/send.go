@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/pkg/errors"
 	"github.com/rhavar/bustapay/rpc-client"
 	"github.com/rhavar/bustapay/util"
 	"io/ioutil"
-	"math"
 	"net/http"
 )
 
@@ -28,7 +26,7 @@ func Send(address string, url string, amount int64) error {
 	if err != nil {
 		return err
 	}
-	util.VerboseLog("Created unfunded transaction: ", util.HexifyTransaction(unfunded))
+	util.VerboseLog("Created unfunded transaction: ", unfunded)
 
 	// Step 2. Run coin selection, and add change (if applicable)
 	funded, err := rpcClient.FundRawTransaction(unfunded)
@@ -52,7 +50,7 @@ func Send(address string, url string, amount int64) error {
 	util.VerboseLog("Got partial transaction back: ", util.HexifyTransaction(partial))
 
 	// Step 5. Validate the receiver didn't give us anything funny
-	err = validate(rpcClient, template, partial)
+	err = validate(template, partial)
 	if err != nil {
 		return err
 	}
@@ -112,7 +110,7 @@ func httpPost(tx *wire.MsgTx, url string) (*wire.MsgTx, error) {
 	return &msgTx, nil
 }
 
-func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial *wire.MsgTx) error {
+func validate(template *wire.MsgTx, partial *wire.MsgTx) error {
 
 	if template.LockTime != partial.LockTime {
 		return errors.New("lock time changed")
@@ -126,72 +124,67 @@ func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial *wi
 		return errors.New("number of outputs changed")
 	}
 
-	if len(template.TxIn)+1 != len(partial.TxIn) {
-		return errors.New("partial transaction should have 1 additional input")
+	if len(partial.TxIn) <= len(template.TxIn) {
+		return errors.New("partial transaction should add inputs")
 	}
 
 	// validate the txins
-	foundContributedInput := false
-	contributedInputAmount := int64(0)
+	usedContributedInputs := make(map[wire.OutPoint] struct{}) // What inputs did the receiver contribute
+	usedTemplateInputs :=  make(map[wire.OutPoint] struct{}) // Which have we seen
 
-	originalTxIns := make(map[wire.OutPoint]*wire.TxIn)
+
+	templateTxIns := make(map[wire.OutPoint]*wire.TxIn)
 	for _, txIn := range template.TxIn {
-		originalTxIns[txIn.PreviousOutPoint] = txIn
+		templateTxIns[txIn.PreviousOutPoint] = txIn
 	}
-	for i, txIn := range partial.TxIn {
+	util.Assert(len(templateTxIns) == len(template.TxIn))
 
-		originalTxIn, contains := originalTxIns[txIn.PreviousOutPoint]
+	for _, txIn := range partial.TxIn {
+
+		templateTxIn, contains := templateTxIns[txIn.PreviousOutPoint]
 
 		if contains {
 
-			if originalTxIn.Sequence != txIn.Sequence {
+			if templateTxIn.Sequence != txIn.Sequence {
 				return errors.New("input sequence has been changed")
 			}
 
-			if !bytes.Equal(originalTxIn.SignatureScript, txIn.SignatureScript) {
+			if !bytes.Equal(templateTxIn.SignatureScript, txIn.SignatureScript) {
 				return errors.New("input sig script has been changed")
 			}
 
 			if len(txIn.Witness) != 0 {
 				return errors.New("input witness has not been cleared")
 			}
+
+			usedTemplateInputs[txIn.PreviousOutPoint] = struct{}{}
+
 		} else {
-			if foundContributedInput {
-				return errors.New("found 2 contributed inputs")
-			}
-			foundContributedInput = true
+			// No need to validate, (if it's invalid, the transaction won't propagate..)
+			// but we can sanity check that it has witnesses
 
-			txOut, err := rpcClient.GetTxOut(&txIn.PreviousOutPoint.Hash, txIn.PreviousOutPoint.Index)
-			if err != nil {
-				return err
+			if len(txIn.Witness) == 0 {
+				return errors.New("found contributed input, but without witness")
 			}
 
-			scriptPubKey, err := hex.DecodeString(txOut.ScriptPubKey.Hex)
-			if err != nil {
-				return err
-			}
-
-			contributedInputAmount = int64(math.Round(txOut.Value * 1e8))
-
-			engine, err := txscript.NewEngine(scriptPubKey, partial, i, txscript.StandardVerifyFlags, nil, nil, contributedInputAmount)
-			if err != nil {
-				return errors.WithStack(err)
-			}
-
-			if err := engine.Execute(); err != nil {
-				return errors.WithStack(err)
-			}
-
+			usedContributedInputs[txIn.PreviousOutPoint] = struct{}{}
 		}
 	}
-	util.Assert(foundContributedInput)
+
+	if len(usedTemplateInputs) != len(template.TxIn) {
+		return errors.New("partial transaction did contain all original txins")
+	}
+
+
+	if len(usedContributedInputs) + len(usedTemplateInputs) != len(partial.TxIn) {
+		return errors.New("partial transaction contained dupe inputs")
+	}
+
 
 	originalTxOuts := make(map[string]*wire.TxOut)
 	for _, txOut := range template.TxOut {
 		originalTxOuts[hex.EncodeToString(txOut.PkScript)] = txOut
 	}
-
-	seenDestination := false
 
 	for _, txOut := range partial.TxOut {
 		pkScriptHex := hex.EncodeToString(txOut.PkScript)
@@ -199,20 +192,17 @@ func validate(rpcClient *rpc_client.RpcClient, template *wire.MsgTx, partial *wi
 		if !contains {
 			return errors.New("partial transaction has output that original didn't")
 		}
-		delete(originalTxOuts, pkScriptHex)
 
 		// Check if this is the changed output
-		if txOut.Value != original.Value {
-			if seenDestination {
-				return errors.New("more than 1 output has had its value changed")
-			}
-			seenDestination = true
-
-			if original.Value+contributedInputAmount != txOut.Value {
-				return errors.New("output value doesnt match original + contributed input amount")
-			}
+		if txOut.Value < original.Value {
+			return errors.New("an output decreased. wtf?")
 		}
+
+		delete(originalTxOuts, pkScriptHex)
 	}
+
+	util.Assert(len(originalTxOuts) == 0)
+
 
 	return nil
 }
