@@ -288,6 +288,7 @@ func (rc *RpcClient) TestMempoolAccept(tx *wire.MsgTx) (bool, error) {
 }
 
 // This is extremely unoptimized! It will be painful on a large wallet
+// also leaks a bit with a timing attack
 func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 
 	info, err := rc.GetAddressInfo(address)
@@ -299,7 +300,7 @@ func (rc *RpcClient) IsMyFreshMyAddress(address string) (bool, error) {
 		return false, nil
 	}
 
-	receives, err := rc.rpcClient.ListReceivedByAddress()
+	receives, err := rc.rpcClient.ListReceivedByAddressMinConf(0)
 	if err != nil {
 		return false, err
 	}

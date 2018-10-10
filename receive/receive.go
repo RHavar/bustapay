@@ -370,6 +370,10 @@ func StartServer(port int32) {
 
 	http.HandleFunc("/", handler)
 
+
+	// This is extremely unsuitable for production. Just for development!
+	http.HandleFunc("/get-newish-address", getNewishAddress)
+
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))
 }
 
