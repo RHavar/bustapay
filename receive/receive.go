@@ -353,20 +353,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func StartServer(port int32) {
 	log.Println("Listening on port: ", port)
 
-	go func() {
-		// For debugging
-		rpcClient, err := rpc_client.NewRpcClient()
-		if err != nil {
-			panic(err)
-		}
-		defer rpcClient.Shutdown()
-
-		addr, err := rpcClient.GetNewAddress()
-		if err != nil {
-			panic(err)
-		}
-		util.VerboseLog("Debug receive address: ", addr)
-	}()
 
 	http.HandleFunc("/", handler)
 
