@@ -295,7 +295,11 @@ func uintToByteSlice(x uint32) []byte {
 func handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(400)
-		fmt.Fprint(w, "you really need to be HTTP POST'ing")
+		fmt.Fprint(w,  `
+bustapay recieve
+
+Newish addresses can get requested at /get-newish-address  and bustapay transactions can be POST'd here
+`)
 		return
 	}
 
