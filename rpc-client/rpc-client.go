@@ -137,6 +137,7 @@ func (rc *RpcClient) FundRawTransaction(rawTx string) (*wire.MsgTx, error) {
 		return nil, errors.WithStack(err)
 	}
 
+
 	rm, err := rc.rpcClient.RawRequest("fundrawtransaction", []json.RawMessage{j})
 	if err != nil {
 		return nil, errors.WithStack(err)

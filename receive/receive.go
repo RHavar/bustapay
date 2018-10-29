@@ -303,6 +303,9 @@ Newish addresses can get requested at /get-newish-address  and bustapay transact
 		return
 	}
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+
 	if r.ContentLength <= 0 {
 		w.WriteHeader(400)
 		fmt.Fprint(w, "missing a content-length")
@@ -350,6 +353,7 @@ Newish addresses can get requested at /get-newish-address  and bustapay transact
 		fmt.Println("proxy transaction error: ", err)
 		return
 	}
+
 
 	w.Write(templateTransaction)
 }
