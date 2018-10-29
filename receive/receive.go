@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"time"
+	"github.com/spf13/viper"
 )
 
 func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
@@ -198,6 +199,12 @@ func createBustpayTransaction(templateTx *wire.MsgTx) ([]byte, error) {
 	file.Close()
 
 	go func() {
+
+		if viper.GetString("disable_auto_relay") != "" {
+			return
+		}
+
+
 		// We're going to use this convoluted loop (instead of doing it directly) so we don't keep the bitcoinRpc connection
 		// open overly long
 		loop := func() bool {
